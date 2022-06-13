@@ -1,0 +1,262 @@
+---
+title: "Clase 16 de mayo"
+author: "Sergio Daniel Carrero"
+date: '2022-05-16'
+output: 
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(faux)
+set.seed(123)
+df <- rnorm_multi(n = 120,
+            mu = c(7, 100),
+            sd = c(1.5, 25),
+            varnames = c('DE', 'DDF'),
+            r = 0.7)
+```
+
+## Modelo
+
+```{r}
+mod_lm <- lm(DE ~ DDF, data = df)
+summary(mod_lm)
+```
+
+$$Y_{DE} = 3.444 + 0.036X$$
+```{r}
+plot(df$DDF, df$DE, pch = 16, ylim = c(0,12), xlim = c(10,170))
+abline(mod_lm, col = 'red')
+```
+
+## Funcion que permite calcular el intercepto
+
+```{r}
+fab <- function(x, y){
+  n <- length(x) # Largo de x -> n
+  b <- (sum(x * y) - n * mean(x) * mean(y)) / (sum(x**2) - n * (mean(x))**2) 
+  a <- mean(y) - b * mean(x)
+  return(data.frame(Intercepto = a, Pendiente = b))
+}
+```
+
+```{r}
+fab(df$DDF, df$DE)
+```
+
+```{r}
+e <- mod_lm$residuals; sum(e)
+S <- sum(e**2); S
+
+hist(e)
+```
+
+## Pruebas de normalidad
+
+```{r}
+shapiro.test(e)
+nortest::sf.test(e)
+nortest::ad.test(e)
+nortest::cvm.test(e) # Check
+```
+
+## Homoseasticidad
+### Revisando homogeniedad de varianzas
+
+```{r}
+plot(e, pch = 16)
+```
+
+### Revisando el supuesto de independencia (Temporal)
+
+## función de autocorrelación
+
+```{r}
+acf(e)
+```
+
+```{r}
+library(faux)
+set.seed(123)
+df2 <- rnorm_multi(n = 120,
+            mu = c(5, 10),
+            sd = c(0.8, 1.2),
+            varnames = c('Mol1', 'Mol2'),
+            r = 0.7)
+
+df2$Mol3 <- sort(df2$Mol2)
+df2$Accesion <- sample(gl(3,40,120, labels = c('A1', 'A2', 'A3')))
+```
+
+```{r}
+xy <- expand.grid(x = seq(1,10),
+                  y = seq(1,12))
+color = cut(df2$Mol1, breaks = 6)
+plot(xy, pch = 15, col = color, cex = 1.8)
+grid(10,12)
+
+```
+
+
+```{r}
+library(ggplot2)
+
+ggplot(df2, aes(x = xy$x, y = xy$y, fill = Mol1)) +
+  geom_tile(color = "white",
+            lwd = 1.5,
+            linetype = 1) +
+  coord_fixed()
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(df2, aes(x = xy$x, y = xy$y, fill = Mol3)) +
+  geom_tile(color = "white",
+            lwd = 1.5,
+            linetype = 1) +
+  geom_text(aes(label = Accesion), color = "white", size = 4)+
+  coord_fixed()
+```
+
+$$H_0: \mu_{A1} = \mu_{A2} = \mu_{A3}\\
+H_a: At~ least~one~is~different$$
+
+## Análisis de varianza
+
+```{r}
+mod_aov <- aov(Mol3 ~ Accesion, data = df2)
+aa <-summary(mod_aov)
+ifelse(aa[[1]][1,5] < 0.05, 'Rechazo Ho', 'No rechazo Ho')
+```
+
+```{r}
+dist_matrix <- as.matrix(dist(cbind(xy$x,xy$y)))
+dim(dist_matrix)
+
+inv_matrix <- 1/dist_matrix
+diag(inv_matrix) <- 0
+head(inv_matrix)
+
+ape::Moran.I(mod_aov$residuals, inv_matrix)
+```
+
+## continuando... con los modelos de regresión espacial
+
+### Modelo autorregresivo puro
+```{r}
+library(spatialreg)
+library(spdep)
+library(sp)
+XY <- as.matrix(xy)
+contnb <- dnearneigh(coordinates(XY),0,380000,longlat = F)
+dlist <- nbdists(contnb, XY)
+dlist <- lapply(dlist, function(x) 1/x)
+Wve <- nb2listw(contnb,glist=dlist,style = "W")  
+mod_map <- spautolm(Mol3 ~ 1, data = df2, listw = Wve)
+summary(mod_map)
+```
+
+$$Y_{Mol3} = \alpha + \lambda W Y + \epsilon$$
+
+$$Y_{Mol3} = 10.1932 + 0.98197 W Y_{Mol3}$$
+
+$$H_0: \lambda = 0\\
+H_a: \lambda \neq 0$$
+
+*Se rechaza la $H_0$*
+
+```{r}
+res_mod_map <- mod_map$fit$residuals
+ape::Moran.I(res_mod_map, inv_matrix)
+```
+
+```{r}
+ggplot(df2, aes(x = xy$x, y = xy$y, fill = res_mod_map)) +
+  geom_tile(color = "white",
+            lwd = 1.5,
+            linetype = 1) +
+  coord_fixed()
+```
+
+```{r}
+pH <- sort(rnorm(120, 5.5, 0.2))
+```
+
+## Nuedo modelo
+
+$$Y_{mol3} = \alpha + \lambda W Y + \beta X_{pH} + \epsilon$$
+## Modelo con variables explicativas 
+
+### Modelo espacial en rezago
+
+```{r}
+mod_2 <- 0
+```
+
+### Asignación
+
+* Correr el modelo espacial en rezago
+
+* Buscar librería (Tip spatialreg, 'spatial lag model') 
+
+## Regresión Lineal Estándar (SLM - OLS)
+
+```{r}
+model_SAR_1<-lm(DE ~ DDF, data = df)
+summary(model_SAR_1)
+```
+
+```{r}
+residuals_model_SAR_1<-residuals(model_SAR_1)
+shapiro.test(residuals_model_SAR_1)
+```
+
+
+
+```{r}
+plot(residuals_model_SAR_1, pch = 16)
+```
+
+## Modelo de Error espacial (SEM)
+
+```{r}
+sem1<-errorsarlm(DE ~ DDF, data = df, listw = Wve)
+summary(sem1)
+```
+
+# Spatial lag model
+
+```{r}
+fit.lag<-lagsarlm(DE ~ DDF, data = df, listw = Wve)
+summary(fit.lag)
+```
+* ¿Este modelo me quita la dependencia espacial?
+
+# el p-valor >0.05 NO hay dependencia especial.
+
+#### Bibliografia
+
+# https://www.google.com/search?q=modelo+espacial+en+rezago&rlz=1C1SQJL_esCO975CO975&oq=modelo+espacial+en+rezago&aqs=chrome..69i57j33i160l2.4082j1j7&sourceid=chrome&ie=UTF-8
+
+# https://bookdown.org/victor_morales/SpatialEconometrics/regresi%C3%B3n-lineal.html
+
+# https://www.google.com/search?q=modelo+espacial+en+rezago+rstudio&rlz=1C1SQJL_esCO975CO975&sxsrf=ALiCzsYl6xBngIpwSK5iXhgJ-flUnrrBDQ%3A1652749889144&ei=Qf aCYpy-CMWIwbkPhvyBiAk&ved=0ahUKEwjc4q2QreX3AhVFRDABHQZ-AJEQ4dUDCA4&uact=5&oq=modelo+espacial+en+rezago+rstudio&gs_lcp=Cgdnd3Mtd2l6EAM6BAgAEEc6BwgjELACECc6BwghEAoQoAE6BAgjECc6BQghEKABSgQIQRgASgQIRhgAUKQGWNoaYJMcaAFwAngAgAGfAogBgg-SAQUwLjkuMpgBAKABAcgBCMABAQ&sclient=gws-wiz
+
+# https://rpubs.com/Yasnacg/675153
+
+# https://www.google.com/search?q=spatial+lag+model+in+r&rlz=1C1SQJL_esCO975CO975&sxsrf=ALiCzsa1-WTSutELcEw1NCtFuR3tYePrEQ%3A1652750138808&ei=OveCYvX9MNaEwbkPwdyOuA0&ved=0ahUKEwj1grSHruX3AhVWQjABHUGuA9cQ4dUDCA4&uact=5&oq=spatial+lag+model+in+r&gs_lcp=Cgdnd3Mtd2l6EAMyBQgAEMsBMgYIABAWEB46BAgAEEc6CAgAEA8QFhAeSgQIQRgASgQIRhgAUK0FWMILYOAPaABwAngBgAHEBIgBkRCSAQkyLTEuMi4wLjKYAQCgAQHIAQjAAQE&sclient=gws-wiz
+
+# https://rspatial.org/raster/analysis/7-spregression.html
+
+# https://crd230.github.io/lab8.html#Spatial_lag_model
+
+# https://cran.r-project.org/web/packages/spatialreg/spatialreg.pdf
+
+
+
